@@ -33,12 +33,12 @@ def get_pair_count_from_word(word: tuple[bytes, ...]) -> dict[tuple[bytes, bytes
     Count adjacent pair count from a single word
     """
     counts: dict[tuple[bytes, bytes], int] = {}
-    if len(word < 2):
+    if len(word) < 2:
         return pair_counts
     prev = word[0]
     for w in word[1:]:
         pair = (prev, w)
-        counts[p] = counts.get(p, 0) + 1
+        counts[pair] = counts.get(pair, 0) + 1
         prev = w
     return counts
 
@@ -58,6 +58,33 @@ def build_pair_counts(word_freq: Counter[tuple[bytes, ...]]) -> dict[tuple[bytes
             pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
 
     return pair_counts
+
+def update_seq_freq(
+    word_seq_freq: Counter[tuple[bytes, ...]], 
+    a: bytes, 
+    b: bytes, 
+    new_token: bytes
+) -> Counter[tuple[bytes, ...]]:
+    updated_counter: Counter[tuple[bytes, ...]] = Counter()
+    for seq, freq in word_seq_freq.items():
+        if len(seq) < 2:
+            continue
+
+        new_seq: list[bytes] = []
+        i = 0
+
+        while i < len(seq):
+            if i < len(seq)-1 and seq[i] == a and seq[i+1] == b:
+                new_seq.append(new_token)
+                i += 2
+            else:
+                new_seq.append(seq[i])
+                i += 1
+
+        updated_counter[tuple(new_seq)] += freq
+    
+    return updated_counter
+
 
 def train_bpe(
     input_path: str | os.PathLike, 
@@ -82,7 +109,7 @@ def train_bpe(
 
     # pretokenize
     text: str = Path(input_path).read_text(encoding="utf-8")
-    word_seq_freq: Counter[tuple[bytes, ...]] = pretokenize(text)
+    word_seq_freq: Counter[tuple[bytes, ...]] = pretokenize(text, special_tokens)
 
     # BPE merge
     pair_counts: dict[tuple[bytes, bytes], int] = build_pair_counts(word_seq_freq)
@@ -101,12 +128,11 @@ def train_bpe(
         vocab[next_id] = new_token
         next_id += 1
 
-        ## 
+        ## TODO: update sequence frequency and rebuild count pairs
+        word_seq_freq = update_seq_freq(word_seq_freq, a, b, new_token)
+        pair_counts = build_pair_counts(word_seq_freq)
 
-        
-
-
-
+    return vocab, merges
 
 
 def run_train_bpe(
@@ -136,4 +162,4 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    return train_bpe(input_path, vocab_size, special_tokens)
