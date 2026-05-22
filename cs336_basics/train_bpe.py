@@ -43,19 +43,23 @@ def get_pair_count_from_word(word: tuple[bytes, ...]) -> dict[tuple[bytes, bytes
     return counts
 
 
-def build_pair_counts(word_freq: Counter[tuple[bytes, ...]]) -> dict[tuple[bytes, bytes], int]:
+def build_pair_counts(word_freq: Counter[tuple[bytes, ...]]) -> tuple[dict[tuple[bytes, bytes], int], dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]]:
     """
     Returns:
     pair_counts: adjacent bytes pair counting
+    pair_to_seqs: map between tuple to a set of sequence
     """
 
     pair_counts: dict[tuple[bytes, bytes], int] = {}
+    pair_to_seqs: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]] = {}
+
     for word, freq in word_freq.items():
         if len(word) < 2:
             continue
         local_pair_counts: dict[tuple[bytes, bytes], int]  = get_pair_count_from_word(word)
         for pair, count in local_pair_counts.items():
             pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
+            pair_to_seqs[pair] = pair_to_seqs.get(pair).append(word)
 
     return pair_counts
 
@@ -128,7 +132,6 @@ def train_bpe(
         vocab[next_id] = new_token
         next_id += 1
 
-        ## TODO: update sequence frequency and rebuild count pairs
         word_seq_freq = update_seq_freq(word_seq_freq, a, b, new_token)
         pair_counts = build_pair_counts(word_seq_freq)
 
