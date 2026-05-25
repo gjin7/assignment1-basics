@@ -34,7 +34,7 @@ def get_pair_count_from_word(word: tuple[bytes, ...]) -> dict[tuple[bytes, bytes
     """
     counts: dict[tuple[bytes, bytes], int] = {}
     if len(word) < 2:
-        return pair_counts
+        return counts
     prev = word[0]
     for w in word[1:]:
         pair = (prev, w)
@@ -43,7 +43,7 @@ def get_pair_count_from_word(word: tuple[bytes, ...]) -> dict[tuple[bytes, bytes
     return counts
 
 
-def build_pair_counts(word_freq: Counter[tuple[bytes, ...]]) -> tuple[dict[tuple[bytes, bytes], int], dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]]:
+def build_pair_stats(seq_freq: Counter[tuple[bytes, ...]]) -> tuple[dict[tuple[bytes, bytes], int], dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]]:
     """
     Returns:
     pair_counts: adjacent bytes pair counting
@@ -53,42 +53,113 @@ def build_pair_counts(word_freq: Counter[tuple[bytes, ...]]) -> tuple[dict[tuple
     pair_counts: dict[tuple[bytes, bytes], int] = {}
     pair_to_seqs: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]] = {}
 
-    for word, freq in word_freq.items():
-        if len(word) < 2:
-            continue
-        local_pair_counts: dict[tuple[bytes, bytes], int]  = get_pair_count_from_word(word)
-        for pair, count in local_pair_counts.items():
-            pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
-            pair_to_seqs[pair] = pair_to_seqs.get(pair).append(word)
-
-    return pair_counts
-
-def update_seq_freq(
-    word_seq_freq: Counter[tuple[bytes, ...]], 
-    a: bytes, 
-    b: bytes, 
-    new_token: bytes
-) -> Counter[tuple[bytes, ...]]:
-    updated_counter: Counter[tuple[bytes, ...]] = Counter()
-    for seq, freq in word_seq_freq.items():
+    for seq, freq in seq_freq.items():
         if len(seq) < 2:
             continue
 
-        new_seq: list[bytes] = []
-        i = 0
+        local_pair_counts: dict[tuple[bytes, bytes], int]  = get_pair_count_from_word(seq)
+        for pair, count in local_pair_counts.items():
+            pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
+            pair_to_seqs.setdefault(pair, set()).add(seq)
 
-        while i < len(seq):
-            if i < len(seq)-1 and seq[i] == a and seq[i+1] == b:
-                new_seq.append(new_token)
-                i += 2
-            else:
-                new_seq.append(seq[i])
-                i += 1
+    return pair_counts, pair_to_seqs
 
-        updated_counter[tuple(new_seq)] += freq
+def apply_merge(seq: tuple[bytes, ...], a: bytes, b: bytes, new_token: bytes) -> tuple[bytes, ...]:
+    merged_seq = []
+    i = 0
+    while i < len(seq):
+        if i < len(seq)-1 and seq[i] == a and seq[i+1] == b:
+            merged_seq.append(new_token)
+            i += 2
+        else:
+            merged_seq.append(seq[i])
+            i += 1
+
+    return tuple(merged_seq)
+
+
+# def update_seq_freq(
+#     word_seq_freq: Counter[tuple[bytes, ...]], 
+#     affected_seqs: set[tuple[bytes, ...]],
+#     a: bytes, 
+#     b: bytes, 
+#     new_token: bytes
+# ) -> Counter[tuple[bytes, ...]]:
+#     updated_seq_freq = word_seq_freq.copy()
+
+#     for old_seq in affected_seqs:
+#         freq = word_seq_freq[old_seq]
+#         if freq <= 0:
+#             updated_seq_freq.pop(old_seq, None)
+#             continue
+
+#         merged_seq = apply_merge(old_seq, a, b, new_token)
+
+#         updated_seq_freq.pop(old_seq, None)
+#         updated_seq_freq[merged_seq] += freq
+        
+#     return updated_seq_freq
+
+def remove_seq_contribution(
+    old_seq: tuple[bytes, ...], 
+    freq: int, 
+    pair_counts: dict[tuple[bytes, bytes], int],
+    pair_to_seqs: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]) -> None:
+    """
+    Remove old sequence contribution for pair_counts and pair_to_seqs dict
+    """
+
+    for pair, count in get_pair_count_from_word(old_seq).items():
+        seqs = pair_to_seqs.get(pair)
+        if seqs is not None:
+            seqs.discard(old_seq)
+            if not seqs:
+                del pair_to_seqs[pair]
+
+        new_count = pair_counts.get(pair, 0) - count * freq
+        if new_count <= 0:
+            pair_counts.pop(pair, None)
+        else:
+            pair_counts[pair] = new_count
+
+def add_seq_contribution(
+    new_seq: tuple[bytes, ...],
+    freq: int, 
+    pair_counts: dict[tuple[bytes, bytes], int],
+    pair_to_seqs: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]]) -> None:
+    """
+    Add new sequence contribution for pair_counts and pair_to_seqs dict
+    """
+
+    if len(new_seq) < 2:
+        return
+    for pair, count in get_pair_count_from_word(new_seq).items():
+        pair_counts[pair] = pair_counts.get(pair, 0) + count * freq
+        seqs = pair_to_seqs.get(pair)
+        if seqs is None:
+            pair_to_seqs[pair] = {new_seq}
+        else:
+            seqs.add(new_seq)
+
+
+def update_bpe_stats(
+    word_seq_freq: Counter[tuple[bytes, ...]], 
+    pair_counts: dict[tuple[bytes, bytes], int],
+    pair_to_seqs: dict[tuple[bytes, bytes], set[tuple[bytes, ...]]],
+    affected_seqs: list[[tuple[bytes, ...]]], 
+    a: bytes, 
+    b: bytes, 
+    new_token: bytes) -> None:
     
-    return updated_counter
+    for old_seq in affected_seqs:
+        freq = word_seq_freq.pop(old_seq, 0)
+        if freq <= 0:
+            continue
 
+        remove_seq_contribution(old_seq, freq, pair_counts, pair_to_seqs)
+        merged_seq = apply_merge(old_seq, a, b, new_token)
+        word_seq_freq[merged_seq] += freq 
+        add_seq_contribution(merged_seq, freq, pair_counts, pair_to_seqs)
 
 def train_bpe(
     input_path: str | os.PathLike, 
@@ -116,8 +187,8 @@ def train_bpe(
     word_seq_freq: Counter[tuple[bytes, ...]] = pretokenize(text, special_tokens)
 
     # BPE merge
-    pair_counts: dict[tuple[bytes, bytes], int] = build_pair_counts(word_seq_freq)
-    merges: List[tuple[bytes, bytes]] = []
+    pair_counts, pair_to_seqs = build_pair_stats(word_seq_freq)
+    merges: list[tuple[bytes, bytes]] = []
 
     while next_id < vocab_size:
         if not pair_counts:
@@ -127,42 +198,12 @@ def train_bpe(
         if best_count <= 0:
             break
 
+        affected_seqs = list(pair_to_seqs[(a, b)])
         new_token = a + b
         merges.append((a, b))
         vocab[next_id] = new_token
         next_id += 1
 
-        word_seq_freq = update_seq_freq(word_seq_freq, a, b, new_token)
-        pair_counts = build_pair_counts(word_seq_freq)
+        update_bpe_stats(word_seq_freq, pair_counts, pair_to_seqs, affected_seqs, a, b, new_token)
 
     return vocab, merges
-
-
-def run_train_bpe(
-    input_path: str | os.PathLike,
-    vocab_size: int,
-    special_tokens: list[str],
-    **kwargs,
-) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    """Given the path to an input corpus, run train a BPE tokenizer and
-    output its vocabulary and merges.
-
-    Args:
-        input_path (str | os.PathLike): Path to BPE tokenizer training data.
-        vocab_size (int): Total number of items in the tokenizer's vocabulary (including special tokens).
-        special_tokens (list[str]): A list of string special tokens to be added to the tokenizer vocabulary.
-            These strings will never be split into multiple tokens, and will always be
-            kept as a single token. If these special tokens occur in the `input_path`,
-            they are treated as any other string.
-
-    Returns:
-        tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-            vocab:
-                The trained tokenizer vocabulary, a mapping from int (token ID in the vocabulary)
-                to bytes (token bytes)
-            merges:
-                BPE merges. Each list item is a tuple of bytes (<token1>, <token2>),
-                representing that <token1> was merged with <token2>.
-                Merges are ordered by order of creation.
-    """
-    return train_bpe(input_path, vocab_size, special_tokens)
