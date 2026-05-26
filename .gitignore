@@ -162,5 +162,12 @@ cython_debug/
 .ruff_cache/
 *.zip
 
+# macOS Finder metadata
+.DS_Store
+
 # Claude Code local settings/memory
 .claude/
+
+# Local datasets and generated experiment outputs
+data/
+outputs/
