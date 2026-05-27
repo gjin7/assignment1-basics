@@ -7,7 +7,7 @@ GPT2_RE = regex.compile(GPT2_PATTERN)
 
 class Tokenizer:
     def __init__(
-        self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[bytes] | None = None
+        self, vocab: dict[int, bytes], merges: list[tuple[bytes, bytes]], special_tokens: list[str] | None = None
     ):
         self.vocab = vocab
         self.merges = merges
@@ -16,14 +16,74 @@ class Tokenizer:
         self.merge_rank: dict[tuple[bytes, bytes], int] = {pair: idx for idx, pair in enumerate(self.merges)}
         self.byte_to_id: dict[bytes, int] = {token_byte: token_id for token_id, token_byte in self.vocab.items()}
 
+        self.special_tokens = sorted(special_tokens or [], key=len, reverse=True)
+        self.special_pattern = "|".join(regex.escape(token) for token in self.special_tokens)
+        self.special_re = regex.compile(f"({self.special_pattern})") if self.special_pattern else None
+
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
         return None
 
     def encode(self, text: str) -> list[int]:
-        return self._encode_normal(text)
+        if self.special_re is None:
+            return self._encode_normal(text)
+
+        if not text:
+            return []
+
+        ids: list[int] = []
+        # the first charater index that has not been processed
+        last = 0
+
+        for match in self.special_re.finditer(text):
+            start, end = match.span()
+            if last < start:
+                ids.extend(self._encode_normal(text[last:start]))
+
+            special = match.group()
+            ids.append(self.byte_to_id[special.encode("utf-8")])
+
+            last = end
+
+        # final part
+        if last < len(text):
+            ids.extend(self._encode_normal(text[last:]))
+
+        return ids
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
-        return None
+        if self.special_re is None:
+            yield from self.encode("".join(iterable))
+            return
+
+        buf = ""
+
+        for chunk in iterable:
+            if not chunk:
+                continue
+
+            buf += chunk
+
+            # while buffer contains a complete special token
+            while True:
+                # find earliest special token.
+                match = self.special_re.search(buf)
+                if match is None:
+                    break
+
+                # encode normal text before it and yield ids
+                start, end = match.span()
+                special = match.group()
+
+                if start > 0:
+                    yield from self._encode_normal(buf[:start])
+
+                # yield special token id
+                yield self.byte_to_id[special.encode("utf-8")]
+                # remove processed prefix
+                buf = buf[end:]
+
+        if buf:
+            yield from self._encode_normal(buf)
 
     def decode(self, ids: list[int]) -> str:
         if not ids:
