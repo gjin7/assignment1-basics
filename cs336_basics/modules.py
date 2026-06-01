@@ -52,3 +52,52 @@ class RMSNorm(nn.Module):
         normed = (x_fp32 / rms) * self.weight.to(torch.float32)
 
         return normed.to(in_dtype)
+
+
+def round_up_to_multiple_of(x: int, multiple_of: int) -> int:
+    if multiple_of <= 0:
+        raise ValueError("multiple_of must be a positive integer")
+
+    return ((x + multiple_of - 1) // multiple_of) * multiple_of
+
+
+def default_d_ff(d_model: int, multiple_of: int = 64) -> int:
+    """
+    default 8/3 and round up to multiple of 64 by default for hardware efficiency
+    """
+    val = int(math.ceil(8.0 * d_model / 3.0))
+    return round_up_to_multiple_of(val, multiple_of)
+
+
+class SwiGLU(nn.Module):
+    """
+    SwiGLU feed-forward network, composed of SiLU activation and a GLU
+
+    FFN(x) = SwiGLU(x, W1, W2, W3) = W2(SiLU(W1 x) ⊙ W3 x)
+    d(ff) = 8/3 d(model)
+
+    input: (..., d_model)
+    W1, W3: (dff, d_model)
+    W2: (d_model, dff)
+    dff: 8/3 * d_model
+    """
+
+    def __init__(self, d_model: int, d_ff: int, multiple_of: int = 64, device=None, dtype=None):
+        super().__init__()
+
+        self.d_model = d_model
+        self.d_ff = d_ff if d_ff is not None else default_d_ff(d_model, multiple_of)
+
+        self.w1 = Linear(d_model, d_ff, dtype=dtype, device=device)
+        self.w2 = Linear(d_ff, d_model, dtype=dtype, device=device)
+        self.w3 = Linear(d_model, d_ff, dtype=dtype, device=device)
+
+    def silu(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.sigmoid(x)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        a = self.w1(x)
+        b = self.w3(x)
+
+        gated = self.silu(a) * b
+        return self.w2(gated)
