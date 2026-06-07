@@ -101,3 +101,65 @@ class SwiGLU(nn.Module):
 
         gated = self.silu(a) * b
         return self.w2(gated)
+
+
+class RoPE(nn.Module):
+    def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
+        super().__init__()
+        
+        if d_k % 2 != 0:
+            raise ValueError("RoPE only supports even embedding dimensions, d_k = {d_k}")
+        if max_seq_len <= 0:
+            raise ValueError("max_seq_len must be a positive integer, max_seq_len = {max_seq_len}")
+        
+        self.theta = theta
+        self.d_k = d_k
+        self.max_seq_len = max_seq_len        
+        
+        pair_idx = torch.arange(0, self.d_k // 2, device=device, dtype=torch.float32) # use torch.arrange to create pair_idx as tensor
+        freq_factor = self.theta ** (-2 * pair_idx / self.d_k) # (d_k/2, )
+
+        # angle = position * freq_factor
+        positions = torch.arange(self.max_seq_len, device=device, dtype=torch.float32).unsqueeze(-1) # (max_seq_len, 1)
+        angles = positions * freq_factor # (max_seq_len, d_k/2)
+
+        sin = torch.sin(angles)
+        cos = torch.cos(angles)
+
+        self.register_buffer("sin", sin, persistent=False)
+        self.register_buffer("cos", cos, persistent=False)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        """
+        Process an input tensor of shape (..., seq_len, d_k) and return a tensor of the same shape. Note
+        that you should tolerate x with an arbitrary number of batch dimensions. Assume that the token positions are a tensor of shape (..., seq_len) specifying the token positions of
+        x along the sequence dimension.
+
+        input: (..., seq_len, d_k)
+        token_positions: (..., seq_len)
+
+        output: (..., seq_len, d_k)
+        """
+
+        if x.size(-1) != self.d_k:
+            raise ValueError(f"Expected x.size(-1) == d_k, but got {x.size(-1)}")
+
+        positions = token_positions.to(device=x.device)
+        cos_selected = self.cos[positions] # (..., seq_len, d_k/2)
+        sin_selected = self.sin[positions] # (..., seq_len, d_k/2)
+
+        x_fp32 = x.to(torch.float32)
+        cos = cos_selected.to(torch.float32)
+        sin = sin_selected.to(torch.float32)
+
+        x_even = x_fp32[..., 0::2] # (..., seq_len, d_k/2)
+        x_odd = x_fp32[..., 1::2] # (..., seq_len, d_k/2)
+
+        rot_even = x_even * cos - x_odd * sin
+        rot_odd = x_even * sin + x_odd * cos
+
+        out = torch.empty_like(x)
+        out[..., 0::2] = rot_even
+        out[..., 1::2] = rot_odd
+
+        return out
