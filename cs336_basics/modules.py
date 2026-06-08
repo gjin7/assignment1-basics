@@ -163,3 +163,64 @@ class RoPE(nn.Module):
         out[..., 1::2] = rot_odd
 
         return out
+
+
+def softmax(x: torch.Tensor, dim: int):
+    """
+    apply softmax to ith dimension of the input tensor
+
+    subtract the largest entry of v from all elements of v, making
+    the new largest entry 0 for numberical stability
+    """
+
+    x_max = torch.max(x, dim=dim, keepdim=True).values
+    z = x - x_max
+
+    exp_z = torch.exp(z)
+    sum_exp = torch.sum(exp_z, dim=dim, keepdim=True)
+
+    return exp_z / sum_exp
+
+
+def scaled_dot_product_attention(
+    query: torch.Tensor, 
+    key: torch.Tensor, 
+    value: torch.Tensor, 
+    mask: torch.Tensor | None = None
+):
+    """
+    Dot product attention function with optional user provided mask 
+
+    Args:
+    query: tensor of shape (batch_size, ..., seq_len, d_k) -- n x d_k 
+    key: tensor of shape (batch_size, ..., seq_len, d_k) -- m x d_k
+    value: tensor of shape (batch_size, ..., seq_len, d_v) -- m x d_v
+    mask: Optional bool tensor of shape (seq_len, seq_len). True means attend and False means not attend
+
+    Return:
+    tensor of shape (batch_size, ..., seq_len, d_v)
+    """
+    if query.dim() < 2 or key.dim() < 2 or value.dim() < 2:
+        raise ValueError("k, q, v must have shape of (..., seq_len, d_*)")
+
+    if query.shape[:-2] != key.shape[:-2] or key.shape[:-2] != value.shape[:-2]:
+        raise ValueError("batch-like dimension of k, q, v must be same")
+
+    d_k = key.shape[-1]
+    if d_k != value.shape[-1]:
+        raise ValueError("d_k for query and key must be the same")
+
+    scale = 1.0 / math.sqrt(d_k)
+    qk_scaled = torch.einsum("...qd, ...kd -> ...qk", query, key) * scale
+
+    if mask is not None:
+        if mask.dtype is not torch.bool:
+            raise TypeError("mask dtype must be bool")
+        
+        qk_scaled_masked = qk_scaled.masked_fill(~mask, -torch.inf) # (..., q_seq_len, k_seq_len)
+    
+    # q over each key dimension
+    logits = softmax(qk_scaled_masked, dim=-1) 
+    out = torch.einsum("... nm, ... mv -> ...nv", logits, value)
+
+    return out    
