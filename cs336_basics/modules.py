@@ -106,22 +106,24 @@ class SwiGLU(nn.Module):
 class RoPE(nn.Module):
     def __init__(self, theta: float, d_k: int, max_seq_len: int, device=None):
         super().__init__()
-        
+
         if d_k % 2 != 0:
             raise ValueError("RoPE only supports even embedding dimensions, d_k = {d_k}")
         if max_seq_len <= 0:
             raise ValueError("max_seq_len must be a positive integer, max_seq_len = {max_seq_len}")
-        
+
         self.theta = theta
         self.d_k = d_k
-        self.max_seq_len = max_seq_len        
-        
-        pair_idx = torch.arange(0, self.d_k // 2, device=device, dtype=torch.float32) # use torch.arrange to create pair_idx as tensor
-        freq_factor = self.theta ** (-2 * pair_idx / self.d_k) # (d_k/2, )
+        self.max_seq_len = max_seq_len
+
+        pair_idx = torch.arange(
+            0, self.d_k // 2, device=device, dtype=torch.float32
+        )  # use torch.arrange to create pair_idx as tensor
+        freq_factor = self.theta ** (-2 * pair_idx / self.d_k)  # (d_k/2, )
 
         # angle = position * freq_factor
-        positions = torch.arange(self.max_seq_len, device=device, dtype=torch.float32).unsqueeze(-1) # (max_seq_len, 1)
-        angles = positions * freq_factor # (max_seq_len, d_k/2)
+        positions = torch.arange(self.max_seq_len, device=device, dtype=torch.float32).unsqueeze(-1)  # (max_seq_len, 1)
+        angles = positions * freq_factor  # (max_seq_len, d_k/2)
 
         sin = torch.sin(angles)
         cos = torch.cos(angles)
@@ -145,15 +147,15 @@ class RoPE(nn.Module):
             raise ValueError(f"Expected x.size(-1) == d_k, but got {x.size(-1)}")
 
         positions = token_positions.to(device=x.device)
-        cos_selected = self.cos[positions] # (..., seq_len, d_k/2)
-        sin_selected = self.sin[positions] # (..., seq_len, d_k/2)
+        cos_selected = self.cos[positions]  # (..., seq_len, d_k/2)
+        sin_selected = self.sin[positions]  # (..., seq_len, d_k/2)
 
         x_fp32 = x.to(torch.float32)
         cos = cos_selected.to(torch.float32)
         sin = sin_selected.to(torch.float32)
 
-        x_even = x_fp32[..., 0::2] # (..., seq_len, d_k/2)
-        x_odd = x_fp32[..., 1::2] # (..., seq_len, d_k/2)
+        x_even = x_fp32[..., 0::2]  # (..., seq_len, d_k/2)
+        x_odd = x_fp32[..., 1::2]  # (..., seq_len, d_k/2)
 
         rot_even = x_even * cos - x_odd * sin
         rot_odd = x_even * sin + x_odd * cos
@@ -183,16 +185,13 @@ def softmax(x: torch.Tensor, dim: int):
 
 
 def scaled_dot_product_attention(
-    query: torch.Tensor, 
-    key: torch.Tensor, 
-    value: torch.Tensor, 
-    mask: torch.Tensor | None = None
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: torch.Tensor | None = None
 ):
     """
-    Dot product attention function with optional user provided mask 
+    Dot product attention function with optional user provided mask
 
     Args:
-    query: tensor of shape (batch_size, ..., seq_len, d_k) -- n x d_k 
+    query: tensor of shape (batch_size, ..., seq_len, d_k) -- n x d_k
     key: tensor of shape (batch_size, ..., seq_len, d_k) -- m x d_k
     value: tensor of shape (batch_size, ..., seq_len, d_v) -- m x d_v
     mask: Optional bool tensor of shape (seq_len, seq_len). True means attend and False means not attend
@@ -216,11 +215,57 @@ def scaled_dot_product_attention(
     if mask is not None:
         if mask.dtype is not torch.bool:
             raise TypeError("mask dtype must be bool")
-        
-        qk_scaled_masked = qk_scaled.masked_fill(~mask, -torch.inf) # (..., q_seq_len, k_seq_len)
-    
+
+        qk_scaled_masked = qk_scaled.masked_fill(~mask, -torch.inf)  # (..., q_seq_len, k_seq_len)
+
     # q over each key dimension
-    logits = softmax(qk_scaled_masked, dim=-1) 
+    logits = softmax(qk_scaled_masked, dim=-1)
     out = torch.einsum("... nm, ... mv -> ...nv", logits, value)
 
-    return out    
+    return out
+
+
+class CasualMultiHeadSelfAttention(nn.Module):
+    """
+    Casual Multi-Head Self Attention
+
+    MultiHead(Q, K, V) = Concat(head_1, ..., head_h)
+    for head_i = Attention(Q_i, K_i, V_i)
+
+    MultiHeadSelfAttention(x) = W_oMultiHead(W_q x, W_k x, W_v x)
+
+    Shapes:
+    x: (..., seq_len, d_model)
+    QKV: (..., seq_len, d_model)
+    output: (..., seq_len, d_model)
+    """
+
+    def __init__(
+        self, d_model: int, num_heads: int, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+
+        if self.d_model % self.num_heads != 0:
+            raise ValueError("d_model must be divisible by num_heads")
+
+        self.head_dim = self.d_model // self.num_heads
+
+        self.q_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.o_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1. Project
+
+        # 2. Split heads
+
+        # 3. Build casual mask
+
+        # 4. Apply attention
+
+        # 5. Merge heads back
+
+        return None
