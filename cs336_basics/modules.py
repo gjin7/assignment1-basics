@@ -258,14 +258,37 @@ class CasualMultiHeadSelfAttention(nn.Module):
         self.o_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: tensor of shape (..., seq_len, d_model)
+
+        Returns:
+            tensor of shape (..., seq_len, d_model)
+        """
+        seq_len = x.size(-2)
+        device = x.device
+
         # 1. Project
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
 
         # 2. Split heads
+        # reshape to (..., num_heads, seq_len, head_dim)
+        q = q.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+        k = k.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+        v = v.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+
+        assert q.shape[-3:] == (self.num_heads, seq_len, self.head_dim)
 
         # 3. Build casual mask
+        mask = torch.tril(torch.ones(seq_len, seq_len, dtype=bool, device=device))
 
         # 4. Apply attention
+        atten = scaled_dot_product_attention(q, k, v, mask=mask)
 
         # 5. Merge heads back
+        atten = atten.transpose(-3, -2).flatten(-2, -1)
+        out = self.o_proj(atten)
 
-        return None
+        return out
