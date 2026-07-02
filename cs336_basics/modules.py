@@ -144,7 +144,7 @@ class RoPE(nn.Module):
         """
 
         if x.size(-1) != self.d_k:
-            raise ValueError(f"Expected x.size(-1) == d_k, but got {x.size(-1)}")
+            raise ValueError(f"Expected x.size(-1) == {self.d_k}, but got {x.size(-1)}")
 
         positions = token_positions.to(device=x.device)
         cos_selected = self.cos[positions]  # (..., seq_len, d_k/2)
@@ -224,7 +224,6 @@ def scaled_dot_product_attention(
 
     return out
 
-
 class CasualMultiHeadSelfAttention(nn.Module):
     """
     Casual Multi-Head Self Attention
@@ -278,6 +277,80 @@ class CasualMultiHeadSelfAttention(nn.Module):
         q = q.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
         k = k.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
         v = v.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+
+        assert q.shape[-3:] == (self.num_heads, seq_len, self.head_dim)
+
+        # 3. Build casual mask
+        mask = torch.tril(torch.ones(seq_len, seq_len, dtype=bool, device=device))
+
+        # 4. Apply attention
+        atten = scaled_dot_product_attention(q, k, v, mask=mask)
+
+        # 5. Merge heads back
+        atten = atten.transpose(-3, -2).flatten(-2, -1)
+        out = self.o_proj(atten)
+
+        return out
+
+
+class CasualMultiHeadSelfAttentionWithRoPE(nn.Module):
+    """
+    Casual Multi-Head Self Attention
+
+    MultiHead(Q, K, V) = Concat(head_1, ..., head_h)
+    for head_i = Attention(Q_i, K_i, V_i)
+
+    MultiHeadSelfAttention(x) = W_oMultiHead(W_q x, W_k x, W_v x)
+
+    Shapes:
+    x: (..., seq_len, d_model)
+    QKV: (..., seq_len, d_model)
+    output: (..., seq_len, d_model)
+    """
+
+    def __init__(
+        self, d_model: int, num_heads: int, theta: float, max_seq_len: int, device: torch.device | None = None, dtype: torch.dtype | None = None
+    ):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+
+        if self.d_model % self.num_heads != 0:
+            raise ValueError("d_model must be divisible by num_heads")
+
+        self.head_dim = self.d_model // self.num_heads
+
+        self.q_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.k_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.v_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.o_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+
+        self.rope = RoPE(theta=theta, d_k=self.head_dim, max_seq_len=max_seq_len, device=device)
+
+    def forward(self, x: torch.Tensor, token_positions: torch.Tensor | None) -> torch.Tensor:
+        """
+        Args:
+            x: tensor of shape (..., seq_len, d_model)
+
+        Returns:
+            tensor of shape (..., seq_len, d_model)
+        """
+        seq_len = x.size(-2)
+        device = x.device
+
+        # 1. Project
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        # 2. Split heads and run RoPE for each head
+        # reshape to (..., num_heads, seq_len, head_dim)
+        q = q.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+        k = k.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+        v = v.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
+
+        q = self.rope(q, token_positions)
+        k = self.rope(k, token_positions)
 
         assert q.shape[-3:] == (self.num_heads, seq_len, self.head_dim)
 
