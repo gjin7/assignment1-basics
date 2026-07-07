@@ -10,7 +10,7 @@ from jaxtyping import Bool, Float, Int
 from torch import Tensor
 from cs336_basics.train_bpe import train_bpe as train_bpe
 from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CasualMultiHeadSelfAttention, CasualMultiHeadSelfAttentionWithRoPE
+from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CasualMultiHeadSelfAttention, CasualMultiHeadSelfAttentionWithRoPE, TransformerBlock
 
 
 def run_linear(
@@ -205,7 +205,7 @@ def run_multihead_self_attention_with_rope(
             "q_proj.weight": q_proj_weight,
             "k_proj.weight": k_proj_weight,
             "v_proj.weight": v_proj_weight,
-            "o_proj.weight": o_proj_weight,
+            "output_proj.weight": o_proj_weight,
         }
     )
 
@@ -305,8 +305,22 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    t_block = TransformerBlock(
+        d_model = d_model,
+        num_heads = num_heads,
+        d_ff = d_ff,
+        max_seq_len = max_seq_len,
+        theta = theta,
+        device = in_features.device,
+        dtype = in_features.dtype,
+    )
 
+    t_block.load_state_dict(weights)
+    batch, seq_len, _ = in_features.shape
+    positions = torch.arange(seq_len, device=in_features.device) # (seq_len, )
+    token_positions = positions.unsqueeze(0).expand(batch, seq_len) # (batch, seq_len)
+
+    return t_block(in_features, token_positions)
 
 def run_transformer_lm(
     vocab_size: int,

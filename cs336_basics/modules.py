@@ -323,7 +323,7 @@ class CasualMultiHeadSelfAttentionWithRoPE(nn.Module):
         self.q_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
         self.k_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
         self.v_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
-        self.o_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
+        self.output_proj = Linear(self.d_model, self.d_model, device=device, dtype=dtype)
 
         self.rope = RoPE(theta=theta, d_k=self.head_dim, max_seq_len=max_seq_len, device=device)
 
@@ -349,8 +349,9 @@ class CasualMultiHeadSelfAttentionWithRoPE(nn.Module):
         k = k.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
         v = v.unflatten(-1, (self.num_heads, self.head_dim)).transpose(-3, -2)
 
-        q = self.rope(q, token_positions)
-        k = self.rope(k, token_positions)
+        tp = token_positions.unsqueeze(-2) # (batch, seq) -> (batch, 1, seq)
+        q = self.rope(q, tp)
+        k = self.rope(k, tp)
 
         assert q.shape[-3:] == (self.num_heads, seq_len, self.head_dim)
 
@@ -362,6 +363,36 @@ class CasualMultiHeadSelfAttentionWithRoPE(nn.Module):
 
         # 5. Merge heads back
         atten = atten.transpose(-3, -2).flatten(-2, -1)
-        out = self.o_proj(atten)
+        out = self.output_proj(atten)
 
         return out
+
+class TransformerBlock(torch.nn.Module):
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, max_seq_len: int, theta: float, eps: float = 1e-5, device=None, dtype=None):
+        super().__init__()
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+        self.attn = CasualMultiHeadSelfAttentionWithRoPE(d_model=d_model, num_heads=num_heads, max_seq_len=max_seq_len, theta=theta, device=device, dtype=dtype)
+        self.ln1 = RMSNorm(d_model=self.d_model, eps=eps, device=device, dtype=dtype)
+        self.ln2 = RMSNorm(d_model=self.d_model, eps=eps, device=device, dtype=dtype)
+        self.ffn = SwiGLU(d_model=self.d_model, d_ff=self.d_ff, device=device, dtype=dtype)
+
+    def forward(self, x:torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: tensor of shape (batch, seq_len, d_model)
+            token_positions: tensor of shape (batch_size, seq_len)
+
+        Returns:
+            tensor of shape (batch, seq_len, d_model)
+        """
+        # 1st sub-layer: norm + MHA
+        h = self.ln1(x)
+        x = x + self.attn(h, token_positions)
+
+        # 2nd sub-layer: norm + FFN
+        h = self.ln2(x)
+        x = x + self.ffn(h)
+
+        return x
