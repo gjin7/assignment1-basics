@@ -4,7 +4,7 @@ from cs336_basics.modules import Embedding, Linear, RMSNorm, TransformerBlock
 
 class TransformerLM(torch.nn.Module):
     """
-    Transformer language model: token embedding -> N transformer block -> Norm -> Linear -> Softmax -> Output probabilities
+    Transformer language model: token embedding -> N transformer block -> Norm -> Linear -> Softmax -> Logits
     """
     def __init__(
         self,
