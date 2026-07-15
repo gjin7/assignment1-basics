@@ -60,3 +60,31 @@ class AdamW(torch.optim.Optimizer):
                 p.addcdiv_(m, denom, value=-adjusted_learning_rate)
 
         return loss
+
+
+def learning_rate_schedule(
+        t: int, 
+        alpha_max: float, 
+        alpha_min: float, 
+        T_w: int, 
+        T_c: int
+    ) -> float:
+    """
+    Cosine learning rate schedule with warm up. 
+
+    Args:
+        t: current iteration
+        alpha_max: max learning rate
+        alpha_min: min learning rate
+        T_w: warm up iteration
+        T_c: final iteration of cosine annealing 
+    """
+    if t < T_w:
+        return 1.0 * t / T_w * alpha_max
+    elif t > T_c:
+        return alpha_min
+    else:
+        num = t - T_w
+        denom = T_c - T_w
+        
+        return alpha_min + 0.5 * (1 + math.cos(1.0 * num / denom * math.pi)) * (alpha_max - alpha_min)

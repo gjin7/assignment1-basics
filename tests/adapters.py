@@ -13,7 +13,7 @@ from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CasualMultiHeadSelfAttention, CasualMultiHeadSelfAttentionWithRoPE, TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.utils import cross_entropy
-from cs336_basics.optimizer import AdamW
+from cs336_basics.optimizer import AdamW, learning_rate_schedule
 
 
 def run_linear(
@@ -557,8 +557,7 @@ def run_get_lr_cosine_schedule(
     Returns:
         Learning rate at the given iteration under the specified schedule.
     """
-    raise NotImplementedError
-
+    return learning_rate_schedule(it, max_learning_rate, min_learning_rate, warmup_iters, cosine_cycle_iters)
 
 def run_save_checkpoint(
     model: torch.nn.Module,
