@@ -1,4 +1,6 @@
 import torch
+from typing import Optional, Callable
+import math
 
 class AdamW(torch.optim.Optimizer):
     def __init__(
@@ -14,12 +16,12 @@ class AdamW(torch.optim.Optimizer):
         if eps < 0.0:
             raise ValueError(f"Invalid epsilon value: {eps}")
         if not (0.0 <= betas[0] < 1.0 and 0.0 <= betas[1] < 1.0):
-            raise ValueEorror(f"Invalid betas: {betas}")
+            raise ValueError(f"Invalid betas: {betas}")
 
-       defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
-       super().__init__(params, defaults)
+        defaults = {"lr": lr, "betas": betas, "eps": eps, "weight_decay": weight_decay}
+        super().__init__(params, defaults)
 
-
+    @torch.no_grad()
     def step(self, closure: Optional[Callable] = None):
         loss = None if closure is None else closure()
         for group in self.param_groups:
@@ -31,6 +33,7 @@ class AdamW(torch.optim.Optimizer):
             for p in group["params"]:
                 if p.grad is None:
                     continue
+                grad = p.grad
 
                 state = self.state[p]
                 if len(state) == 0:
@@ -38,7 +41,22 @@ class AdamW(torch.optim.Optimizer):
                     state["m"] = torch.zeros_like(p)
                     state["v"] = torch.zeros_like(p)
 
-               state["step"] += 1
-               m, v = state["m"], state["v"]
-               m.mul_(beta1).add_(grad, alpha=1-beta1) # m = beta1 * m + (1-beta1) * grad
-               v.mul_(beta2).addcmul_(grad, alpha=1-beta2)
+                state["step"] += 1
+                step = state["step"]
+
+                adjusted_learning_rate = lr * math.sqrt(1.0-beta2**step) / (1.0-beta1**step)
+
+                # apply weight decay
+                if wd != 0.0:
+                   p.add_(p, alpha=-lr*wd)
+
+                # update first/second moment estimate
+                m, v = state["m"], state["v"]
+                m.mul_(beta1).add_(grad, alpha=1-beta1) # m = beta1 * m + (1-beta1) * grad
+                v.mul_(beta2).addcmul_(grad, grad, value=1-beta2) # v = beta2 * m + (1-beta2) * grad^2
+
+                # update parameters
+                denom = torch.sqrt(v).add_(eps)
+                p.addcdiv_(m, denom, value=-adjusted_learning_rate)
+
+        return loss
