@@ -14,7 +14,7 @@ from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softm
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.utils import cross_entropy, clip_gradient
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
-
+from cs336_basics.data import get_batch
 
 def run_linear(
     d_in: int,
@@ -477,8 +477,8 @@ def run_get_batch(
         is the sampled input sequences, and the second tuple item is the corresponding
         language modeling labels.
     """
-    raise NotImplementedError
-
+    return get_batch(dataset=dataset, batch_size=batch_size, context_length=context_length, device=device)
+    
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
     """
