@@ -1,5 +1,7 @@
 import torch
+import os
 from typing import Iterable
+import typing
 import math
 
 def cross_entropy(logits: torch.Tensor, targets: torch.Tensor):
@@ -65,3 +67,39 @@ def clip_gradient(
             g.mul_(coeffcient)
 
     return
+
+def save_checkpoint(
+    model: torch.nn.Module, 
+    optimizer: torch.optim.Optimizer, 
+    iteration: int, 
+    out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], 
+) -> None:
+    """
+    Given a model, optimizer, and an iteration number, serialize them to disk.
+
+    Args:
+        model (torch.nn.Module): Serialize the state of this model.
+        optimizer (torch.optim.Optimizer): Serialize the state of this optimizer.
+        iteration (int): Serialize this value, which represents the number of training iterations
+            we've completed.
+        out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
+    """
+    obj = {
+        "iteration": iteration, 
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict()
+    } 
+    
+    torch.save(obj, out)
+
+def load_checkpoint(
+    src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], 
+    model: torch.nn.Module, 
+    optimizer: torch.optim.Optimizer, 
+) -> int:
+    ckpt = torch.load(src)
+
+    model.load_state_dict(ckpt["model_state_dict"])
+    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+
+    return int(ckpt["iteration"])

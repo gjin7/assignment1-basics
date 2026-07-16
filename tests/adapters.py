@@ -12,7 +12,7 @@ from cs336_basics.train_bpe import train_bpe as train_bpe
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.modules import Linear, Embedding, RMSNorm, SwiGLU, RoPE, softmax, scaled_dot_product_attention, CasualMultiHeadSelfAttention, CasualMultiHeadSelfAttentionWithRoPE, TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
-from cs336_basics.utils import cross_entropy, clip_gradient
+from cs336_basics.utils import cross_entropy, clip_gradient, save_checkpoint, load_checkpoint
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.data import get_batch
 
@@ -574,8 +574,7 @@ def run_save_checkpoint(
             we've completed.
         out (str | os.PathLike | BinaryIO | IO[bytes]): Path or file-like object to serialize the model, optimizer, and iteration to.
     """
-    raise NotImplementedError
-
+    return save_checkpoint(model=model, optimizer=optimizer, iteration=iteration, out=out)
 
 def run_load_checkpoint(
     src: str | os.PathLike | BinaryIO | IO[bytes],
@@ -595,8 +594,7 @@ def run_load_checkpoint(
     Returns:
         int: the previously-serialized number of iterations.
     """
-    raise NotImplementedError
-
+    return load_checkpoint(src=src, model=model, optimizer=optimizer)
 
 def get_tokenizer(
     vocab: dict[int, bytes],
