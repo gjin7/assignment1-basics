@@ -25,8 +25,8 @@ def token_display(token: bytes) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-path", type=Path, default=Path("data/TinyStoriesV2-GPT4-train.txt"))
-    parser.add_argument("--output-dir", type=Path, default=Path("outputs/tinystories_bpe_10k"))
+    parser.add_argument("--input-path", type=Path, required=True) 
+    parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--vocab-size", type=int, default=10_000)
     parser.add_argument("--special-token", default="<|endoftext|>")
     parser.add_argument("--num-processes", type=int, default=1)

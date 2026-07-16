@@ -2,6 +2,11 @@ import numpy.typing as npt
 import numpy as np
 import torch
 
+
+def open_memmap(path: str, dtype: str | np.dtype) -> np.memmap:
+    return np.memmap(path, dtype=np.dtype(dtype), mode="r")
+
+
 def get_batch(
     dataset: npt.NDArray,
     batch_size: int, 
