@@ -1,5 +1,6 @@
 from collections.abc import Iterable, Iterator
 import regex
+import pickle
 
 GPT2_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 GPT2_RE = regex.compile(GPT2_PATTERN)
@@ -20,8 +21,15 @@ class Tokenizer:
         self.special_pattern = "|".join(regex.escape(token) for token in self.special_tokens)
         self.special_re = regex.compile(f"({self.special_pattern})") if self.special_pattern else None
 
+    @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None):
-        return None
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+        
+        with open(merges_filepath, "rb") as f:
+            merges = pickle.load(f)
+
+        return cls(vocab=vocab, merges=merges, special_tokens=special_tokens)
 
     def encode(self, text: str) -> list[int]:
         if self.special_re is None:

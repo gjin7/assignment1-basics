@@ -5,6 +5,7 @@ import resource
 import sys
 import time
 from pathlib import Path
+import pickle
 
 from cs336_basics.train_bpe import run_train_bpe
 
@@ -51,16 +52,14 @@ def main() -> None:
 
     longest_id, longest_token = max(vocab.items(), key=lambda item: len(item[1]))
 
-    vocab_path = args.output_dir / "vocab.json"
-    merges_path = args.output_dir / "merges.txt"
+    vocab_path = args.output_dir / "vocab.pkl"
+    merges_path = args.output_dir / "merges.pkl"
     summary_path = args.output_dir / "summary.json"
 
-    with vocab_path.open("w", encoding="utf-8") as f:
-        json.dump({str(idx): list(token) for idx, token in vocab.items()}, f, indent=2)
-
-    with merges_path.open("w", encoding="utf-8") as f:
-        for left, right in merges:
-            f.write(f"{left.hex()} {right.hex()}\n")
+    with vocab_path.open("wb") as f:
+        pickle.dump(vocab, f)
+    with merges_path.open("wb") as f:
+        pickle.dump(merges, f)
 
     summary = {
         "input_path": os.fspath(args.input_path),
