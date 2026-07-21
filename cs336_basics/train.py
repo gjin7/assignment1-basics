@@ -44,13 +44,13 @@ def main() -> None:
 
     # 3. Create model.
     model = TransformerLM(
-        vocab_size=cfg.model.vocab_size,        
-        context_length=cfg.model.context_length, 
-        num_layers=cfg.model.num_layers, 
+        vocab_size=cfg.model.vocab_size,
+        context_length=cfg.model.context_length,
+        num_layers=cfg.model.num_layers,
         d_model=cfg.model.d_model,
         num_heads=cfg.model.num_heads,
         d_ff=cfg.model.d_ff,
-        rope_theta=cfg.model.rope_theta, 
+        rope_theta=cfg.model.rope_theta,
         device=device,
     ).to(device)
 
@@ -74,22 +74,22 @@ def main() -> None:
     for step in range(start_step, cfg.train.max_steps):
         # 6.1. Update learning rate based on schedule.
         lr = learning_rate_schedule(
-            t=step, 
+            t=step,
             alpha_max=cfg.optimizer.lr_max,
-            alpha_min=cfg.optimizer.lr_min, 
-            T_w=cfg.optimizer.warmup_steps, 
+            alpha_min=cfg.optimizer.lr_min,
+            T_w=cfg.optimizer.warmup_steps,
             T_c=cfg.optimizer.cosine_cycle_steps or cfg.train.max_steps,
         )
-        
+
         for group in optimizer.param_groups:
             group["lr"] = lr
 
         # 6.2. Sample a training batch.
         # input_ids, target_ids: (batch_size, context_length)
         input_ids, target_ids = get_batch(
-            dataset=train_mm, 
-            batch_size=cfg.train.batch_size, 
-            context_length=cfg.model.context_length, 
+            dataset=train_mm,
+            batch_size=cfg.train.batch_size,
+            context_length=cfg.model.context_length,
             device=device,
         )
 
@@ -116,7 +116,7 @@ def main() -> None:
         # 6.9. Log training progress.
         recent_losses.append(loss.item())
         if step % cfg.train.log_interval == 0:
-            avg_loss = sum(recent_losses[-cfg.train.log_interval:]) / len(recent_losses[-cfg.train.log_interval:])
+            avg_loss = sum(recent_losses[-cfg.train.log_interval :]) / len(recent_losses[-cfg.train.log_interval :])
             print(f"step {step}: loss={loss.item():.4f}, avg_loss={avg_loss:.4f}, lr={lr:.2e}")
 
 
