@@ -1,6 +1,6 @@
 import torch
 import os
-from typing import Iterable
+from collections.abc import Iterable
 import typing
 import math
 
@@ -73,6 +73,7 @@ def save_checkpoint(
     optimizer: torch.optim.Optimizer, 
     iteration: int, 
     out: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], 
+    wall_time: float | None = None,
 ) -> None:
     """
     Given a model, optimizer, and an iteration number, serialize them to disk.
@@ -89,6 +90,8 @@ def save_checkpoint(
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict()
     } 
+    if wall_time is not None:
+        obj["wall_time"] = wall_time
     
     torch.save(obj, out)
 
@@ -96,10 +99,17 @@ def load_checkpoint(
     src: str | os.PathLike | typing.BinaryIO | typing.IO[bytes], 
     model: torch.nn.Module, 
     optimizer: torch.optim.Optimizer, 
-) -> int:
+    return_metadata: bool = False,
+) -> int | tuple[int, dict[str, object]]:
     ckpt = torch.load(src)
 
     model.load_state_dict(ckpt["model_state_dict"])
     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
 
-    return int(ckpt["iteration"])
+    iteration = int(ckpt["iteration"])
+    if return_metadata:
+        return iteration, {
+            "wall_time": float(ckpt.get("wall_time", 0.0)),
+        }
+
+    return iteration

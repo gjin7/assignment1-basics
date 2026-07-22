@@ -8,7 +8,8 @@ class DataConfig:
 
 @dataclass 
 class RunConfig:
-    run_dir: str = "runs/default"
+    run_dir: str = "runs"
+    run_name_prefix: str = "ts"
     resume_from: str | None = None
     
 @dataclass
@@ -68,7 +69,7 @@ def get_mini_config():
     cfg.train.max_steps = 5000
     cfg.train.batch_size = 8
     cfg.train.log_interval = 10
-    cfg.train.eval_interval = 10_000
+    cfg.train.eval_interval = 100
     cfg.train.eval_batches = 2
     cfg.train.ckpt_interval = 1000
 
@@ -81,5 +82,5 @@ def get_mini_config():
     cfg.optimizer.warmup_steps = 30
     cfg.optimizer.cosine_cycle_steps = cfg.train.max_steps
 
-    cfg.run.run_dir = "runs/mini"
+    cfg.run.run_name_prefix = "ts_mini"
     return cfg

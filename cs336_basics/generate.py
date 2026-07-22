@@ -92,7 +92,7 @@ def main() -> None:
     import argparse
     from pathlib import Path
 
-    from cs336_basics.config import get_mini_config
+    from cs336_basics.config import get_default_config, get_mini_config
     from cs336_basics.optimizer import AdamW
     from cs336_basics.tokenizer import Tokenizer
     from cs336_basics.train import get_device
@@ -100,7 +100,8 @@ def main() -> None:
     from cs336_basics.utils import load_checkpoint
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint-path", type=Path, default=Path("runs/mini/checkpoints/final.pt"))
+    parser.add_argument("--mini", action="store_true", help="Use the mini model config.")
+    parser.add_argument("--checkpoint-path", type=Path, required=True)
     parser.add_argument("--vocab-path", type=Path, default=Path("outputs/tinystories_bpe_10k/vocab.pkl"))
     parser.add_argument("--merges-path", type=Path, default=Path("outputs/tinystories_bpe_10k/merges.pkl"))
     parser.add_argument("--prompt", type=str, default="Once upon a time")
@@ -109,7 +110,7 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=0.9)
     args = parser.parse_args()
 
-    cfg = get_mini_config()
+    cfg = get_mini_config() if args.mini else get_default_config()
     device = get_device(cfg.train.device)
 
     model = TransformerLM(
