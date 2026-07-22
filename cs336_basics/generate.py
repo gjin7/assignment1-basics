@@ -1,6 +1,5 @@
 import torch
 
-
 def top_p_sampling(probs: torch.Tensor, top_p: float) -> torch.Tensor:
     """
     Apply nucleus (top-p) filtering to a probability vector.
@@ -88,3 +87,73 @@ def generate(
         model.train()
 
     return output_ids
+
+def main() -> None:
+    import argparse
+    from pathlib import Path
+
+    from cs336_basics.config import get_mini_config
+    from cs336_basics.optimizer import AdamW
+    from cs336_basics.tokenizer import Tokenizer
+    from cs336_basics.train import get_device
+    from cs336_basics.transformer_lm import TransformerLM
+    from cs336_basics.utils import load_checkpoint
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--checkpoint-path", type=Path, default=Path("runs/mini/checkpoints/final.pt"))
+    parser.add_argument("--vocab-path", type=Path, default=Path("outputs/tinystories_bpe_10k/vocab.pkl"))
+    parser.add_argument("--merges-path", type=Path, default=Path("outputs/tinystories_bpe_10k/merges.pkl"))
+    parser.add_argument("--prompt", type=str, default="Once upon a time")
+    parser.add_argument("--max-new-tokens", type=int, default=100)
+    parser.add_argument("--temperature", type=float, default=0.8)
+    parser.add_argument("--top-p", type=float, default=0.9)
+    args = parser.parse_args()
+
+    cfg = get_mini_config()
+    device = get_device(cfg.train.device)
+
+    model = TransformerLM(
+        vocab_size=cfg.model.vocab_size,
+        context_length=cfg.model.context_length,
+        num_layers=cfg.model.num_layers,
+        d_model=cfg.model.d_model,
+        num_heads=cfg.model.num_heads,
+        d_ff=cfg.model.d_ff,
+        rope_theta=cfg.model.rope_theta,
+        device=device,
+    ).to(device)
+
+    optimizer = AdamW(
+        model.parameters(),
+        lr=cfg.optimizer.lr_max,
+        betas=(cfg.optimizer.beta1, cfg.optimizer.beta2),
+        eps=cfg.optimizer.eps,
+        weight_decay=cfg.optimizer.weight_decay,
+    )
+
+    load_checkpoint(args.checkpoint_path, model, optimizer)
+
+    tokenizer = Tokenizer.from_files(
+        args.vocab_path,
+        args.merges_path,
+        special_tokens=["<|endoftext|>"],
+    )
+
+    prompt_ids = torch.tensor(tokenizer.encode(args.prompt), dtype=torch.long)
+    eos_token_id = tokenizer.byte_to_id[b"<|endoftext|>"]
+
+    output_ids = generate(
+        model=model,
+        prompt_ids=prompt_ids,
+        max_new_tokens=args.max_new_tokens,
+        temperature=args.temperature,
+        context_length=cfg.model.context_length,
+        top_p=args.top_p,
+        eos_token_id=eos_token_id,
+    )
+
+    print(tokenizer.decode(output_ids.tolist()))
+
+
+if __name__ == "__main__":
+    main()

@@ -3,11 +3,13 @@ import argparse
 import numpy as np
 import torch
 
+from pathlib import Path
+
 from cs336_basics.config import get_default_config, get_mini_config
 from cs336_basics.data import get_batch, open_memmap
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.transformer_lm import TransformerLM
-from cs336_basics.utils import clip_gradient, cross_entropy, load_checkpoint
+from cs336_basics.utils import clip_gradient, cross_entropy, load_checkpoint, save_checkpoint
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +40,10 @@ def main() -> None:
     np.random.seed(cfg.train.seed)
     torch.manual_seed(cfg.train.seed)
 
+    run_dir = cfg.run.run_dir 
+    ckpt_dir = Path(run_dir) / "checkpoints"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+
     # 2. Load tokenized datasets.
     train_mm = open_memmap(cfg.data.train_data_path, cfg.data.dtype)
     _val_mm = open_memmap(cfg.data.val_data_path, cfg.data.dtype)
@@ -65,13 +71,15 @@ def main() -> None:
 
     # 5. Resume from checkpoint if requested.
     start_step = 0
-    if cfg.train.resume_from is not None:
-        start_step = load_checkpoint(src=cfg.train.resume_from, model=model, optimizer=optimizer)
+    if cfg.run.resume_from is not None:
+        start_step = load_checkpoint(src=cfg.run.resume_from, model=model, optimizer=optimizer)
 
     # 6. Training loop.
     model.train()
     recent_losses: list[float] = []
     for step in range(start_step, cfg.train.max_steps):
+        ckpt_path = ckpt_dir / f"step_{step+1}.pt"
+
         # 6.1. Update learning rate based on schedule.
         lr = learning_rate_schedule(
             t=step,
@@ -119,6 +127,19 @@ def main() -> None:
             avg_loss = sum(recent_losses[-cfg.train.log_interval :]) / len(recent_losses[-cfg.train.log_interval :])
             print(f"step {step}: loss={loss.item():.4f}, avg_loss={avg_loss:.4f}, lr={lr:.2e}")
 
+        # 6.10 Periodically save checkpoint
+        if cfg.train.ckpt_interval > 0 and (step+1) % cfg.train.ckpt_interval == 0:
+            save_checkpoint(
+                model=model, 
+                optimizer=optimizer, 
+                iteration=step+1, 
+                out=ckpt_path, 
+            )
+    # 7 Save final checkpoint 
+    final_ckpt_path = ckpt_dir / "final.pt"
+    save_checkpoint(model, optimizer, cfg.train.max_steps, final_ckpt_path)
+
+        
 
 if __name__ == "__main__":
     main()

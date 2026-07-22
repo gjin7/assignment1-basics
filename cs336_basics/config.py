@@ -6,6 +6,11 @@ class DataConfig:
     val_data_path: str = "data/tinystories_val.uint16.bin"
     dtype: str = "uint16"
 
+@dataclass 
+class RunConfig:
+    run_dir: str = "runs/default"
+    resume_from: str | None = None
+    
 @dataclass
 class ModelConfig:
     vocab_size: int = 10_000
@@ -26,10 +31,7 @@ class TrainingConfig:
     eval_batches: int = 20
     
     ckpt_interval: int = 2000 
-    resume_from: str | None = None
-    
     device: str = "auto"
-
     seed: int = 1337
 
 @dataclass 
@@ -49,6 +51,7 @@ class OptimizerConfig:
 @dataclass
 class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
+    run: RunConfig = field(default_factory=RunConfig)
     data: DataConfig = field(default_factory=DataConfig)
     train: TrainingConfig = field(default_factory=TrainingConfig)
     optimizer: OptimizerConfig = field(default_factory=OptimizerConfig)
@@ -62,12 +65,12 @@ def get_default_config():
 def get_mini_config():
     cfg = get_default_config()
 
-    cfg.train.max_steps = 300
+    cfg.train.max_steps = 5000
     cfg.train.batch_size = 8
     cfg.train.log_interval = 10
     cfg.train.eval_interval = 10_000
     cfg.train.eval_batches = 2
-    cfg.train.ckpt_interval = 10_000
+    cfg.train.ckpt_interval = 1000
 
     cfg.model.context_length = 128
     cfg.model.num_layers = 2
@@ -78,4 +81,5 @@ def get_mini_config():
     cfg.optimizer.warmup_steps = 30
     cfg.optimizer.cosine_cycle_steps = cfg.train.max_steps
 
+    cfg.run.run_dir = "runs/mini"
     return cfg
