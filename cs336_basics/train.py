@@ -6,7 +6,7 @@ import torch
 from pathlib import Path
 from datetime import datetime
 
-from cs336_basics.config import get_default_config, get_mini_config
+from cs336_basics.config import Config, get_default_config, get_mini_config
 from cs336_basics.data import get_batch, open_memmap
 from cs336_basics.optimizer import AdamW, learning_rate_schedule
 from cs336_basics.transformer_lm import TransformerLM
@@ -79,10 +79,8 @@ def estimate_loss(
     return sum(losses) / len(losses)
 
 
-def main() -> None:
-    # 1. Load config.
-    args = parse_args()
-    cfg = get_mini_config() if args.mini else get_default_config()
+def train(cfg: Config) -> Path:
+    # 1. Resolve runtime config.
     device = get_device(cfg.train.device)
 
     np.random.seed(cfg.train.seed)
@@ -230,7 +228,14 @@ def main() -> None:
         wall_time=tracker.elapsed_time(),
     )
 
-        
+    return run_dir
+
+
+def main() -> None:
+    args = parse_args()
+    cfg = get_mini_config() if args.mini else get_default_config()
+    train(cfg)
+
 
 if __name__ == "__main__":
     main()
